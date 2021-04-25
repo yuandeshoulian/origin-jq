@@ -319,7 +319,9 @@ func (client *Client) Run(){
 }
 
 func (client *Client) OnClose(){
-	client.TriggerRpcEvent(false,client.GetId())
+	if client.TriggerRpcEvent!= nil {
+		client.TriggerRpcEvent(false,client.GetId())
+	}
 }
 
 func (client *Client) IsConnected() bool {
@@ -328,4 +330,10 @@ func (client *Client) IsConnected() bool {
 
 func (client *Client) GetId() int{
 	return client.id
+}
+
+func (client *Client) Close(waitDone bool){
+	client.OnClose()
+	client.TriggerRpcEvent = nil
+	client.TCPClient.Close(waitDone)
 }
