@@ -467,6 +467,9 @@ func (handler *RpcHandler) asyncCallRpc(nodeid int,serviceMethod string,args int
 	var pClientList [maxClusterNode]*Client
 	err,count := handler.funcRpcClient(nodeid,serviceMethod,pClientList[:])
 	if count==0||err != nil {
+		if err == nil {
+			err = fmt.Errorf("cannot find rpcclient from nodeid %d serviceMethod %s",nodeid,serviceMethod)
+		}
 		fVal.Call([]reflect.Value{reflect.ValueOf(reply),reflect.ValueOf(err)})
 		log.Error("Call serviceMethod is error:%+v!",err)
 		return nil

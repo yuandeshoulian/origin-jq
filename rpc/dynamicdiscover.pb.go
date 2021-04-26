@@ -151,11 +151,11 @@ func (m *ServiceDiscoverReq) GetNodeInfo() *NodeInfo {
 
 //Master->Client
 type SubscribeDiscoverNotify struct {
-	DelNodeId            int32     `protobuf:"varint,1,opt,name=DelNodeId,proto3" json:"DelNodeId,omitempty"`
-	NodeInfo             *NodeInfo `protobuf:"bytes,2,opt,name=nodeInfo,proto3" json:"nodeInfo,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}  `json:"-"`
-	XXX_unrecognized     []byte    `json:"-"`
-	XXX_sizecache        int32     `json:"-"`
+	DelNodeId            int32       `protobuf:"varint,1,opt,name=DelNodeId,proto3" json:"DelNodeId,omitempty"`
+	NodeInfo             []*NodeInfo `protobuf:"bytes,2,rep,name=nodeInfo,proto3" json:"nodeInfo,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}    `json:"-"`
+	XXX_unrecognized     []byte      `json:"-"`
+	XXX_sizecache        int32       `json:"-"`
 }
 
 func (m *SubscribeDiscoverNotify) Reset()         { *m = SubscribeDiscoverNotify{} }
@@ -198,7 +198,7 @@ func (m *SubscribeDiscoverNotify) GetDelNodeId() int32 {
 	return 0
 }
 
-func (m *SubscribeDiscoverNotify) GetNodeInfo() *NodeInfo {
+func (m *SubscribeDiscoverNotify) GetNodeInfo() []*NodeInfo {
 	if m != nil {
 		return m.NodeInfo
 	}
@@ -263,7 +263,7 @@ func init() {
 func init() { proto.RegisterFile("rpc/dynamicdiscover.proto", fileDescriptor_9bfdd3ec0419520f) }
 
 var fileDescriptor_9bfdd3ec0419520f = []byte{
-	// 277 bytes of a gzipped FileDescriptorProto
+	// 278 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0x92, 0x2c, 0x2a, 0x48, 0xd6,
 	0x4f, 0xa9, 0xcc, 0x4b, 0xcc, 0xcd, 0x4c, 0x4e, 0xc9, 0x2c, 0x4e, 0xce, 0x2f, 0x4b, 0x2d, 0xd2,
 	0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x2e, 0x2a, 0x48, 0x56, 0x5a, 0xc6, 0xc8, 0xc5, 0xe1,
@@ -278,10 +278,10 @@ var fileDescriptor_9bfdd3ec0419520f = []byte{
 	0x66, 0x6e, 0x23, 0x5e, 0xbd, 0xa2, 0x82, 0x64, 0x3d, 0x98, 0x97, 0x82, 0xe0, 0xd2, 0x4a, 0x49,
 	0x5c, 0xe2, 0xc1, 0xa5, 0x49, 0xc5, 0xc9, 0x45, 0x99, 0x49, 0x70, 0x23, 0xfc, 0xf2, 0x4b, 0x32,
 	0xd3, 0x2a, 0x85, 0x64, 0xb8, 0x38, 0x5d, 0x52, 0x73, 0x50, 0xbc, 0x8e, 0x10, 0x40, 0xb1, 0x83,
-	0x09, 0xbf, 0x1d, 0xd8, 0x1c, 0x59, 0x8c, 0xe6, 0x48, 0x66, 0x3c, 0x06, 0x38, 0x09, 0x9f, 0x78,
-	0x24, 0xc7, 0x78, 0xe1, 0x91, 0x1c, 0xe3, 0x83, 0x47, 0x72, 0x8c, 0x51, 0xac, 0x7a, 0xfa, 0x45,
-	0x05, 0xc9, 0x49, 0x6c, 0xe0, 0xf8, 0x32, 0x06, 0x04, 0x00, 0x00, 0xff, 0xff, 0xf3, 0x96, 0xd9,
-	0x54, 0xcc, 0x01, 0x00, 0x00,
+	0x49, 0x81, 0x19, 0x9f, 0x1d, 0xd8, 0x1c, 0x59, 0x8c, 0xe6, 0x48, 0x7c, 0x06, 0x38, 0x09, 0x9f,
+	0x78, 0x24, 0xc7, 0x78, 0xe1, 0x91, 0x1c, 0xe3, 0x83, 0x47, 0x72, 0x8c, 0x51, 0xac, 0x7a, 0xfa,
+	0x45, 0x05, 0xc9, 0x49, 0x6c, 0xe0, 0xf8, 0x32, 0x06, 0x04, 0x00, 0x00, 0xff, 0xff, 0x4e, 0xe0,
+	0x0f, 0xa5, 0xcc, 0x01, 0x00, 0x00,
 }
 
 func (m *NodeInfo) Marshal() (dAtA []byte, err error) {
@@ -412,17 +412,19 @@ func (m *SubscribeDiscoverNotify) MarshalToSizedBuffer(dAtA []byte) (int, error)
 		i -= len(m.XXX_unrecognized)
 		copy(dAtA[i:], m.XXX_unrecognized)
 	}
-	if m.NodeInfo != nil {
-		{
-			size, err := m.NodeInfo.MarshalToSizedBuffer(dAtA[:i])
-			if err != nil {
-				return 0, err
+	if len(m.NodeInfo) > 0 {
+		for iNdEx := len(m.NodeInfo) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.NodeInfo[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintDynamicdiscover(dAtA, i, uint64(size))
 			}
-			i -= size
-			i = encodeVarintDynamicdiscover(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0x12
 		}
-		i--
-		dAtA[i] = 0x12
 	}
 	if m.DelNodeId != 0 {
 		i = encodeVarintDynamicdiscover(dAtA, i, uint64(m.DelNodeId))
@@ -541,9 +543,11 @@ func (m *SubscribeDiscoverNotify) Size() (n int) {
 	if m.DelNodeId != 0 {
 		n += 1 + sovDynamicdiscover(uint64(m.DelNodeId))
 	}
-	if m.NodeInfo != nil {
-		l = m.NodeInfo.Size()
-		n += 1 + l + sovDynamicdiscover(uint64(l))
+	if len(m.NodeInfo) > 0 {
+		for _, e := range m.NodeInfo {
+			l = e.Size()
+			n += 1 + l + sovDynamicdiscover(uint64(l))
+		}
 	}
 	if m.XXX_unrecognized != nil {
 		n += len(m.XXX_unrecognized)
@@ -931,10 +935,8 @@ func (m *SubscribeDiscoverNotify) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if m.NodeInfo == nil {
-				m.NodeInfo = &NodeInfo{}
-			}
-			if err := m.NodeInfo.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+			m.NodeInfo = append(m.NodeInfo, &NodeInfo{})
+			if err := m.NodeInfo[len(m.NodeInfo)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex

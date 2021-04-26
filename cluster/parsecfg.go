@@ -210,7 +210,7 @@ func (cls *Cluster) GetNodeIdByService(serviceName string,rpcClientList []*rpc.C
 	count := 0
 	if ok == true {
 		for nodeId,_ := range mapNodeId {
-			pClient := GetCluster().GetRpcClient(nodeId)
+			pClient := GetCluster().getRpcClient(nodeId)
 			if pClient==nil  || (bAll == false && pClient.IsConnected()==false) {
 				continue
 			}

@@ -23,6 +23,7 @@ type IService interface {
 	GetName() string
 	OnSetup(iService IService)
 	OnInit() error
+	OnStart()
 	OnRelease()
 	Wait()
 	Start()
@@ -99,6 +100,7 @@ func (s *Service) Run() {
 	log.Debug("Start running Service %s.", s.GetName())
 	defer s.wg.Done()
 	var bStop = false
+	s.self.(IService).OnStart()
 	for{
 		rpcRequestChan := s.GetRpcRequestChan()
 		rpcResponseCallBack := s.GetRpcResponseChan()
@@ -211,4 +213,7 @@ func (s *Service) IsSingleCoroutine() bool {
 
 func (s *Service) RegRawRpc(rpcMethodId uint32,rawRpcCB rpc.RawRpcCallBack){
 	s.rpcHandler.RegRawRpc(rpcMethodId,rawRpcCB)
+}
+
+func (s *Service) OnStart(){
 }

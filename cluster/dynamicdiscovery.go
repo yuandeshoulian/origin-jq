@@ -53,16 +53,37 @@ func (ds *DynamicDiscoveryMaster) addNodeInfo(nodeInfo *rpc.NodeInfo){
 func (ds *DynamicDiscoveryMaster) OnInit() error{
 	ds.mapNodeInfo = make(map[int32] *rpc.NodeInfo,20)
 	cluster.RegisterRpcListener(ds)
+
 	return nil
 }
 
+func (ds *DynamicDiscoveryMaster) OnStart(){
+	var nodeInfo rpc.NodeInfo
+	localNodeInfo := cluster.GetLocalNodeInfo()
+	if localNodeInfo.Private == true {
+		return
+	}
+
+	nodeInfo.NodeId = int32(localNodeInfo.NodeId)
+	nodeInfo.NodeName = localNodeInfo.NodeName
+	nodeInfo.ListenAddr = localNodeInfo.ListenAddr
+	nodeInfo.PublicServiceList = localNodeInfo.PublicServiceList
+
+	ds.addNodeInfo(&nodeInfo)
+}
 
 func (ds *DynamicDiscoveryMaster) OnRpcConnected(nodeId int){
+	//向它发布所有服务列表信息
+	var notifyDiscover rpc.SubscribeDiscoverNotify
+	notifyDiscover.NodeInfo = ds.nodeInfo
+	ds.GoNode(nodeId,DynamicDiscoveryClientNameRpcMethod,&notifyDiscover)
 }
 
 func (ds *DynamicDiscoveryMaster) OnRpcDisconnect(nodeId int){
 	var notifyDiscover rpc.SubscribeDiscoverNotify
 	notifyDiscover.DelNodeId = int32(nodeId)
+	//删除结点
+	cluster.delNode(nodeId,false)
 	ds.CastGo(DynamicDiscoveryClientNameRpcMethod,&notifyDiscover)
 }
 
@@ -74,6 +95,11 @@ func (ds *DynamicDiscoveryMaster) RPC_RegServiceDiscover(req *rpc.ServiceDiscove
 
 		return err
 	}
+
+	//广播给其他所有结点
+	var notifyDiscover rpc.SubscribeDiscoverNotify
+	notifyDiscover.NodeInfo = append(notifyDiscover.NodeInfo,req.NodeInfo)
+	ds.CastGo(DynamicDiscoveryClientNameRpcMethod,&notifyDiscover)
 
 	//初始化结点信息
 	var nodeInfo NodeInfo
@@ -88,13 +114,11 @@ func (ds *DynamicDiscoveryMaster) RPC_RegServiceDiscover(req *rpc.ServiceDiscove
 	cluster.serviceDiscoveryDelNode(nodeInfo.NodeId)
 
 	//加入到本地Cluster模块中，将连接该结点
+	//如果本结点不为master结点，而且没有可使用的服务，不加入
 	cluster.serviceDiscoverySetNodeInfo(&nodeInfo)
 	res.NodeInfo = ds.nodeInfo
 
-	//广播给其他所有结点
-	var notifyDiscover rpc.SubscribeDiscoverNotify
-	notifyDiscover.NodeInfo = req.NodeInfo
-	ds.CastGo(DynamicDiscoveryClientNameRpcMethod,&notifyDiscover)
+
 
 	return nil
 }
@@ -104,15 +128,24 @@ func (dc *DynamicDiscoveryClient) OnInit() error{
 	return nil
 }
 
+func (dc *DynamicDiscoveryClient) OnStart(){
+	//2.添加并连接发现主结点
+	cluster.localNodeInfo.PublicServiceList = append(cluster.localNodeInfo.PublicServiceList,DynamicDiscoveryClientName)
+	cluster.addDiscoveryMaster()
+}
+
 //订阅发现的服务通知
 func (dc *DynamicDiscoveryClient) RPC_SubServiceDiscover(req *rpc.SubscribeDiscoverNotify) error{
 	//忽略本地结点
 	if req.DelNodeId == int32(dc.localNodeId) {
 		return nil
 	}
-
 	dc.funDelService(int(req.DelNodeId))
-	dc.SetNodeInfo(req.NodeInfo)
+
+	for _, nodeInfo := range req.NodeInfo {
+
+		dc.SetNodeInfo(nodeInfo)
+	}
 
 	return nil
 }
@@ -133,6 +166,7 @@ func (dc *DynamicDiscoveryClient) OnRpcConnected(nodeId int) {
 	}
 
 	var req rpc.ServiceDiscoverReq
+	req.NodeInfo = &rpc.NodeInfo{}
 	req.NodeInfo.NodeId = int32(cluster.localNodeInfo.NodeId)
 	req.NodeInfo.NodeName = cluster.localNodeInfo.NodeName
 	req.NodeInfo.ListenAddr = cluster.localNodeInfo.ListenAddr
@@ -145,20 +179,15 @@ func (dc *DynamicDiscoveryClient) OnRpcConnected(nodeId int) {
 			return
 		}
 
-		for _, nodeInfo := range res.NodeInfo {
-			if len(nodeInfo.PublicServiceList) == 0 {
-				log.Error("nodeinfo is error %+v", nodeInfo)
-				continue
-			}
-			dc.SetNodeInfo(nodeInfo)
-		}
+
 	})
 }
 
 func (dc *DynamicDiscoveryClient) SetNodeInfo(nodeInfo *rpc.NodeInfo){
-	if nodeInfo == nil {
+	if nodeInfo==nil || len(nodeInfo.PublicServiceList)==0 || nodeInfo.Private == true {
 		return
 	}
+
 	var nInfo NodeInfo
 	nInfo.ServiceList = nodeInfo.PublicServiceList
 	nInfo.PublicServiceList = nodeInfo.PublicServiceList
