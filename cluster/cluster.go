@@ -30,18 +30,24 @@ type NodeRpcInfo struct {
 
 var cluster Cluster
 type Cluster struct {
-	localNodeInfo NodeInfo
-	discoveryNodeList []NodeInfo
+	localNodeInfo NodeInfo						//本结点配置信息
+	discoveryNodeList []NodeInfo				//配置发现Master结点
 
-	localServiceCfg map[string]interface{} //map[serviceName]配置数据*
-	mapRpc map[int] NodeRpcInfo            //nodeId
-	serviceDiscovery IServiceDiscovery     //服务发现接口
-	mapIdNode map[int]NodeInfo             //map[NodeId]NodeInfo
-	mapServiceNode map[string]map[int]struct{}        //map[serviceName]map[NodeId]
-	locker sync.RWMutex
+	localServiceCfg map[string]interface{} 		//map[serviceName]配置数据*
+	mapRpc map[int] NodeRpcInfo            		//nodeId
+	serviceDiscovery IServiceDiscovery     		//服务发现接口
+
+	locker sync.RWMutex							//结点与服务关系保护锁
+	mapIdNode map[int]NodeInfo             		//map[NodeId]NodeInfo
+	mapServiceNode map[string]map[int]struct{}  //map[serviceName]map[NodeId]
+
 	rpcServer rpc.Server
+	rpcEventLocker           sync.RWMutex		 //Rpc事件监听保护锁
+	mapServiceListenRpcEvent map[string]struct{} //ServiceName
+}
 
-	rpcListerList []rpc.IRpcListener
+func GetCluster() *Cluster{
+	return &cluster
 }
 
 func SetConfigDir(cfgDir string){
@@ -52,21 +58,15 @@ func SetServiceDiscovery(serviceDiscovery IServiceDiscovery) {
 	cluster.serviceDiscovery = serviceDiscovery
 }
 
-func (cls *Cluster) serviceDiscoveryDelNode (nodeId int){
-	if nodeId == 0 {
-		return
-	}
-
-	cls.delNode(nodeId,true)
+func (cls *Cluster) Start() {
+	cls.rpcServer.Start(cls.localNodeInfo.ListenAddr)
 }
 
-func (cls *Cluster) HasNode(nodeId int) bool{
-	_,ok := cls.mapIdNode[nodeId]
-	return ok
+func (cls *Cluster) Stop() {
+	cls.serviceDiscovery.OnNodeStop()
 }
 
-func (cls *Cluster) delNode(nodeId int,closeClient bool){
-	//删除rpc连接关系
+func (cls *Cluster) DelNode(nodeId int){
 	cls.locker.Lock()
 	nodeInfo,ok := cls.mapIdNode[nodeId]
 	if ok == false {
@@ -77,14 +77,23 @@ func (cls *Cluster) delNode(nodeId int,closeClient bool){
 	for _,serviceName := range nodeInfo.ServiceList{
 		cls.delServiceNode(serviceName,nodeId)
 	}
+
 	rpc,ok := cls.mapRpc[nodeId]
 	delete(cls.mapIdNode,nodeId)
 	delete(cls.mapRpc,nodeId)
 
 	cls.locker.Unlock()
-	if closeClient==true && ok == true {
+	if ok == true {
 		rpc.client.Close(false)
 	}
+}
+
+func (cls *Cluster) serviceDiscoveryDelNode (nodeId int){
+	if nodeId == 0 {
+		return
+	}
+
+	cls.DelNode(nodeId)
 }
 
 func (cls *Cluster) delServiceNode(serviceName string,nodeId int){
@@ -97,10 +106,6 @@ func (cls *Cluster) delServiceNode(serviceName string,nodeId int){
 	if len(mapNode)==0 {
 		delete(cls.mapServiceNode,serviceName)
 	}
-}
-
-func (cls *Cluster) refreshNodeService(nodeInfo *NodeInfo){
-
 }
 
 func (cls *Cluster) serviceDiscoverySetNodeInfo (nodeInfo *NodeInfo){
@@ -136,7 +141,7 @@ func (cls *Cluster) serviceDiscoverySetNodeInfo (nodeInfo *NodeInfo){
 	}
 	cls.mapIdNode[nodeInfo.NodeId] = *nodeInfo
 
-	//已经存在，则不需要进行设置
+	//已经存在连接，则不需要进行设置
 	if _,rpcInfoOK := cls.mapRpc[nodeInfo.NodeId];rpcInfoOK == true {
 		return
 	}
@@ -158,17 +163,18 @@ func (cls *Cluster) buildLocalRpc(){
 }
 
 func (cls *Cluster) Init(localNodeId int,setupServiceFun SetupServiceFun) error{
-
-	//2.初始化配置
+	//1.初始化配置
 	err := cls.InitCfg(localNodeId)
 	if err != nil {
-		cls.locker.Unlock()
 		return err
 	}
 
 	cls.rpcServer.Init(cls)
 	cls.buildLocalRpc()
+
+	//2.安装服务发现结点
 	cls.SetupServiceDiscovery(localNodeId,setupServiceFun)
+	service.RegRpcEventFun = cls.RegRpcEvent
 
 	err = cls.serviceDiscovery.InitDiscovery(localNodeId,cls.serviceDiscoveryDelNode,cls.serviceDiscoverySetNodeInfo)
 	if err != nil {
@@ -202,27 +208,24 @@ func (cls *Cluster) appendService(serviceName string){
 	cls.mapServiceNode[serviceName][cls.localNodeInfo.NodeId]= struct{}{}
 }
 
-func (cls *Cluster) addDiscoveryMaster(){
-	for i:=0;i<len(cls.discoveryNodeList);i++ {
-		if cls.discoveryNodeList[i].NodeId == cls.localNodeInfo.NodeId {
-			continue
-		}
-		cls.serviceDiscoverySetNodeInfo(&cls.discoveryNodeList[i])
-	}
+func (cls *Cluster) GetDiscoveryNodeList()  []NodeInfo{
+	return cls.discoveryNodeList
 }
 
 func (cls *Cluster) SetupServiceDiscovery(localNodeId int,setupServiceFun SetupServiceFun) {
-	//1.如果没有配置DiscoveryNode配置，则使用配置文件发现服务
-	localMaster,hasMaster := cls.checkDynamicDiscovery(localNodeId)
-	if hasMaster == false {
-		cls.serviceDiscovery = &ConfigDiscovery{}
-		//setupServiceFun(cls.ser0viceDiscovery)
+	if cls.serviceDiscovery!=nil {
 		return
 	}
 
+	//1.如果没有配置DiscoveryNode配置，则使用默认配置文件发现服务
+	localMaster,hasMaster := cls.checkDynamicDiscovery(localNodeId)
+	if hasMaster == false {
+		cls.serviceDiscovery = &ConfigDiscovery{}
+		return
+	}
 	setupServiceFun(&masterService,&clientService)
 
-	//3.如果为动态服务发现安装本地发现服务
+	//2.如果为动态服务发现安装本地发现服务
 	cls.serviceDiscovery = getDynamicDiscovery()
 	if localMaster == true {
 		cls.appendService(DynamicDiscoveryMasterName)
@@ -238,18 +241,6 @@ func (cls *Cluster) FindRpcHandler(serviceName string) rpc.IRpcHandler {
 	}
 
 	return pService.GetRpcHandler()
-}
-
-func (cls *Cluster) Start() {
-	cls.rpcServer.Start(cls.localNodeInfo.ListenAddr)
-}
-
-func (cls *Cluster) Stop() {
-	cls.serviceDiscovery.OnNodeStop()
-}
-
-func GetCluster() *Cluster{
-	return &cluster
 }
 
 func (cls *Cluster) getRpcClient(nodeId int) *rpc.Client {
@@ -297,21 +288,55 @@ func (cls *Cluster) IsNodeConnected (nodeId int) bool {
 	return pClient!=nil && pClient.IsConnected()
 }
 
-func (cls *Cluster) RegisterRpcListener (rpcLister rpc.IRpcListener) {
-	cls.rpcListerList = append(cls.rpcListerList,rpcLister)
-}
-
-func (cls *Cluster) triggerRpcEvent (bConnect bool,nodeId int) {
-	for _,lister := range cls.rpcListerList {
-		if bConnect {
-			lister.OnRpcConnected(nodeId)
-		}else{
-			lister.OnRpcDisconnect(nodeId)
-		}
+func (cls *Cluster) triggerRpcEvent (bConnect bool,clientSeq uint32,nodeId int) {
+	cls.locker.Lock()
+	nodeInfo,ok := cls.mapRpc[nodeId]
+	if ok == false || nodeInfo.client==nil || nodeInfo.client.GetClientSeq()!=clientSeq {
+		cls.locker.Unlock()
+		return
 	}
+	cls.locker.Unlock()
+
+	cls.rpcEventLocker.Lock()
+	for serviceName,_:= range cls.mapServiceListenRpcEvent{
+		ser := service.GetService(serviceName)
+		if ser == nil {
+			log.Error("cannot find service name %s",serviceName)
+			continue
+		}
+
+		var eventData service.RpcEventData
+		eventData.IsConnect = bConnect
+		eventData.NodeId = nodeId
+		ser.(service.IModule).NotifyEvent(&eventData)
+	}
+	cls.rpcEventLocker.Unlock()
 }
 
 func (cls *Cluster) GetLocalNodeInfo() *NodeInfo {
 	return &cls.localNodeInfo
 }
 
+func (cls *Cluster) RegRpcEvent(serviceName string){
+	cls.rpcEventLocker.Lock()
+	if cls.mapServiceListenRpcEvent == nil {
+		cls.mapServiceListenRpcEvent = map[string]struct{}{}
+	}
+
+	cls.mapServiceListenRpcEvent[serviceName] = struct{}{}
+	cls.rpcEventLocker.Unlock()
+}
+
+func (cls *Cluster) UnRegRpcEvent(serviceName string){
+	cls.rpcEventLocker.Lock()
+	delete(cls.mapServiceListenRpcEvent,serviceName)
+	cls.rpcEventLocker.Unlock()
+}
+
+func (cls *Cluster) FetchAllNodeId(fetchFun func(nodeId int)){
+	cls.locker.Lock()
+	for nodeId,_:= range cls.mapIdNode {
+		fetchFun(nodeId)
+	}
+	cls.locker.Unlock()
+}

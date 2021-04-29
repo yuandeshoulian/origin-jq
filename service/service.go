@@ -43,6 +43,16 @@ type Service struct {
 	startStatus    bool
 	eventProcessor event.IEventProcessor
 	profiler *profiler.Profiler //性能分析器
+	rpcEventLister rpc.IRpcListener
+}
+
+type RpcEventData struct{
+	IsConnect bool
+	NodeId int
+}
+
+func (rpcEventData *RpcEventData) GetEventType() event.EventType{
+	return event.Sys_Event_Rpc_Event
 }
 
 func (s *Service) OnSetup(iService IService){
@@ -217,3 +227,24 @@ func (s *Service) RegRawRpc(rpcMethodId uint32,rawRpcCB rpc.RawRpcCallBack){
 
 func (s *Service) OnStart(){
 }
+
+func (s *Service) OnRpcEvent(ev event.IEvent){
+	event := ev.(*RpcEventData)
+	if event.IsConnect {
+		s.rpcEventLister.OnRpcConnected(event.NodeId)
+	}else{
+		s.rpcEventLister.OnRpcDisconnect(event.NodeId)
+	}
+}
+
+func (s *Service) RegisterRpcListener (rpcEventLister rpc.IRpcListener) {
+	s.rpcEventLister = rpcEventLister
+	s.RegEventReceiverFunc(event.Sys_Event_Rpc_Event,s.GetEventHandler(),s.OnRpcEvent)
+	RegRpcEventFun(s.GetName())
+}
+
+func (s *Service) UnRegisterRpcListener (rpcLister rpc.IRpcListener) {
+	s.UnRegEventReceiverFunc(event.Sys_Event_Rpc_Event,s.GetEventHandler())
+	RegRpcEventFun(s.GetName())
+}
+

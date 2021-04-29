@@ -63,7 +63,7 @@ type RpcHandler struct {
 	callResponseCallBack chan *Call //异步返回的回调
 }
 
-type TriggerRpcEvent func(bConnect bool,nodeId int)
+type TriggerRpcEvent func(bConnect bool,clientSeq uint32,nodeId int)
 type IRpcListener interface {
 	OnRpcConnected(nodeId int)
 	OnRpcDisconnect(nodeId int)

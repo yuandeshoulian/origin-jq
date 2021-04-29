@@ -17,8 +17,9 @@ message ServiceDiscoverReq{
 
 //Master->Client
 message SubscribeDiscoverNotify{
-    int32 DelNodeId    = 1;
-    repeated NodeInfo nodeInfo = 2;
+    bool IsFull = 1;
+    int32 DelNodeId    = 2;
+    repeated NodeInfo nodeInfo = 3;
 }
 
 

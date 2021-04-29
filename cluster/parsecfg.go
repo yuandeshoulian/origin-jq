@@ -165,6 +165,18 @@ func (cls *Cluster) parseLocalCfg(){
 }
 
 
+func (cls *Cluster) checkDiscoveryNodeList(discoverMasterNode []NodeInfo) bool{
+	for i:=0;i<len(discoverMasterNode)-1;i++{
+		for j:=i+1;i<len(discoverMasterNode);j++{
+			if discoverMasterNode[i].NodeId == discoverMasterNode[j].NodeId ||
+				discoverMasterNode[i].ListenAddr == discoverMasterNode[j].ListenAddr {
+				return false
+			}
+		}
+	}
+
+	return true
+}
 
 func (cls *Cluster) InitCfg(localNodeId int) error{
 	cls.localServiceCfg = map[string]interface{}{}
@@ -178,6 +190,9 @@ func (cls *Cluster) InitCfg(localNodeId int) error{
 		return err
 	}
 	cls.localNodeInfo = nodeInfoList[0]
+	if cls.checkDiscoveryNodeList(discoveryNode) ==false {
+		return fmt.Errorf("DiscoveryNode config is error!")
+	}
 	cls.discoveryNodeList = discoveryNode
 
 	//读取本地服务配置
